@@ -27,12 +27,25 @@ jobs:
           cache: pnpm
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile
-      - name: Lint, build, integration and Chrome/Firefox tests
+      - name: Complete Chrome and Firefox suites without stopping at the first failed spec
         shell: bash
         run: |
           set -o pipefail
           mkdir -p "$RUNNER_TEMP/chartjs-validation"
-          xvfb-run --auto-servernum pnpm test 2>&1 | tee "$RUNNER_TEMP/chartjs-validation/test.log"
+          xvfb-run --auto-servernum pnpm exec cross-env NODE_ENV=test karma start ./karma.conf.cjs --no-auto-watch --single-run --coverage --browsers chrome,firefox --grep 2>&1 | tee "$RUNNER_TEMP/chartjs-validation/browsers-full.log"
+      - name: Compare the unchanged baseline on the same Firefox installation
+        if: always()
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/chartjs-validation"
+          source_path=src/plugins/plugin.legend.js
+          patched_source="$RUNNER_TEMP/chartjs-validation/plugin.legend.patched.js"
+          cp "$source_path" "$patched_source"
+          trap 'cp "$patched_source" "$source_path"' EXIT
+          git fetch --no-tags --depth=1 origin 6a86e238fac3d1ad35eb84b93e7804dfb5813f79
+          git show "6a86e238fac3d1ad35eb84b93e7804dfb5813f79:$source_path" > "$source_path"
+          xvfb-run --auto-servernum pnpm exec cross-env NODE_ENV=test karma start ./karma.conf.cjs --no-auto-watch --single-run --coverage --browsers firefox --grep controller.polarArea 2>&1 | tee "$RUNNER_TEMP/chartjs-validation/firefox-baseline-polar-area.log"
       - name: Preserve logs
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
